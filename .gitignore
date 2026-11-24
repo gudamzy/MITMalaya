@@ -1,0 +1,10 @@
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# Local-only runtime output (captures/logs must never be committed)
+output/
+*.log
+*.pcap
