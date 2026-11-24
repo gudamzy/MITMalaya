@@ -1,0 +1,4 @@
+# arpspoof.py dependencies
+# Install: pip install -r requirements.txt  (run the tool with sudo on Linux)
+
+scapy==2.5.0
