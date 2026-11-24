@@ -88,7 +88,7 @@ authors accept **no liability** for misuse.
 
 | # | Name | Student ID |
 |---|------|-----------|
-| 1 | Muhammad Adam Danish bin Mohd Anis | _<!-- isi no. matrik -->_ |
+| 1 | Muhammad Adam Danish bin Mohd Anis | 52215125900 |
 | 2 | Muhammad Afiq Izzuddin bin Saifullizan | 52215125428 |
 | 3 | Mohamad Syahmi Amrin bin Mursham | 52215125622 |
 | 4 | Nurul Elysya Elina binti Zamri | 52215125032 |
