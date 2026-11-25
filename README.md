@@ -1,4 +1,4 @@
-# arpspoof.py — ARP Spoofing MITM Demonstrator 🧪⚡
+# MITMalaya
 
 **IKB31603 — Ethical Hacking Tool Development · Category 3: Network Attack**
 Group: **Haker Malaya**
@@ -12,7 +12,7 @@ Group: **Haker Malaya**
 
 ## What it does
 
-`arpspoof.py` demonstrates a Layer-2 **Man-in-the-Middle** attack. It sends
+`mitmalaya.py` demonstrates a Layer-2 **Man-in-the-Middle** attack. It sends
 forged ARP replies so a victim associates the gateway's IP with the attacker's
 MAC address (and the gateway associates the victim's IP with the attacker's
 MAC). All traffic between victim and gateway is then relayed through the
@@ -45,7 +45,7 @@ pip install -r requirements.txt
 ## Usage
 
 ```bash
-sudo python3 arpspoof.py
+sudo python3 mitmalaya.py
 ```
 
 You will be prompted for:
